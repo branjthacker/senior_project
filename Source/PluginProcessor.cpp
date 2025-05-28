@@ -166,7 +166,8 @@ bool Harmonicator9000AudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* Harmonicator9000AudioProcessor::createEditor()
 {
-    return new Harmonicator9000AudioProcessorEditor (*this);
+    return new juce::GenericAudioProcessorEditor(*this);
+    //return new Harmonicator9000AudioProcessorEditor (*this);
 }
 
 //==============================================================================
@@ -181,6 +182,36 @@ void Harmonicator9000AudioProcessor::setStateInformation (const void* data, int 
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
+}
+
+juce::AudioProcessorValueTreeState::ParameterLayout
+Harmonicator9000AudioProcessor::createParameterLayout() {
+    //create all the parameters we will be using as knobs with ranges that
+    //make sense (for band volume +/- 15dB, for filtering 100Hz->20kHz,
+    // for synth volume -inf (-50 will be fine) to 0))
+    //layed out in the order they will appear on the panel
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    layout.add(std::make_unique<juce::AudioParameterFloat>("oddLowPass",
+        "Odd Low Pass", 100.0, 20000.0, 20000.0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>("oddSynth",
+        "Odd Synth", -50.0, 0.0, -50.0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>("oddHarmonics",
+        "Odd Harmonics", -15.0, 15.0, 0.0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>("fundamental",
+        "Fundamental Frequency", -15.0, 15.0, 0.0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>("evenHarmonics",
+        "Even Harmonics", -15.0, 15.0, 0.0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>("evenSynth",
+        "Even Synth", -50.0, 0.0, -50.0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>("evenLowPass",
+        "Even Low Pass", 100.0, 20000.0, 20000.0));
+    return layout;
 }
 
 //==============================================================================

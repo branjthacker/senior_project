@@ -16,6 +16,10 @@
 class Harmonicator9000AudioProcessor  : public juce::AudioProcessor
 {
 public:
+
+    //==============================================================================
+    static constexpr auto fftOrder = 12; //define an fft size of 4096 for enough tracking resolution
+    static constexpr auto fftSize = 1 << fftOrder;
     //==============================================================================
     Harmonicator9000AudioProcessor();
     ~Harmonicator9000AudioProcessor() override;
@@ -59,5 +63,12 @@ public:
 
 private:
     //==============================================================================
+    juce::dsp::FFT forwardFFT; //the actual FFT object
+    std::array<float, fftSize> fifo; //queue to hold input samples
+    std::array<float, fftSize * 2> fftData; //queue to hold output sample
+    int fifoCounter = 0; //counts up to 4096 samples, triggers FFT, then resets
+    bool nextFFTBlockReady = false; //set true when we want to actually do the fft
+    //function to add sample to fft
+    void addToFFT(float sample);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Harmonicator9000AudioProcessor)
 };

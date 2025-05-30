@@ -9,6 +9,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+
 //==============================================================================
 Harmonicator9000AudioProcessor::Harmonicator9000AudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -19,7 +20,8 @@ Harmonicator9000AudioProcessor::Harmonicator9000AudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
+       forwardFFT (fftOrder) //initialize the fft object
 #endif
 {
 }
@@ -91,6 +93,24 @@ void Harmonicator9000AudioProcessor::changeProgramName (int index, const juce::S
 }
 
 //==============================================================================
+void Harmonicator9000AudioProcessor::addToFFT(float sample) {
+    //check if the index is at the end of the queue, if so start a new fft process
+    if (fifoCounter == fftSize) {
+        if (!nextFFTBlockReady) {
+            //the fft is done and the output has been taken into a new thread, we can start the next fft
+            std::fill(fftData.begin(), fftData.end(), 0.0);
+            std::copy(fifo.begin(), fifo.end(), fftData.begin());
+            nextFFTBlockReady = true;
+
+        }
+        fifoCounter = 0;
+    }
+    //add sample and advance the counter
+    fifo[fifoCounter] = sample;
+    fifoCounter++;
+}
+
+//==============================================================================
 void Harmonicator9000AudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Use this method as the place to do any pre-playback
@@ -153,6 +173,17 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
+        //here: call a function that will add the sample to the DSP FIFO, increment the counter, set the
+        //boolean if we are ready to do the calc (and reset the pointer)
+        for (int i = 0; i < buffer.getNumSamples(); ++i) {
+            addToFFT(channelData[i]);
+        }
+        //call the multiply add chain program
+        //call a function that returns the next sample for the harmonic synths and adds those
+        //in the FFT THREAD: when the boolean is set, wake up, calculate the FFT, calculate fundamental frequency, go to sleep.
+        //in the coefficient calculator: when the fundamental frequency is changed, wake up, calculate coefficients, set a semaphore,
+        //update the coefficients in the multiply add function, go back to sleep
+        //when knobs are changed: change coefficients that each filtered sound will be multipled by?
 
         // ..do something to the data...
     }

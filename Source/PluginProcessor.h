@@ -20,6 +20,7 @@ public:
     //==============================================================================
     static constexpr auto fftOrder = 12; //define an fft size of 4096 for enough tracking resolution
     static constexpr auto fftSize = 1 << fftOrder;
+    static float fundamentalFreq;
     //==============================================================================
     Harmonicator9000AudioProcessor();
     ~Harmonicator9000AudioProcessor() override;
@@ -68,7 +69,10 @@ private:
     std::array<float, fftSize * 2> fftData; //queue to hold output sample
     int fifoCounter = 0; //counts up to 4096 samples, triggers FFT, then resets
     bool nextFFTBlockReady = false; //set true when we want to actually do the fft
+    double sampleRate = 48000; //default sample rate, change in process audio block
     //function to add sample to fft
-    void addToFFT(float sample);
+    void addToFFT(float sample) noexcept;
+    //compute fft then find the fundamental(this should be spawned in a thread or fork)
+    void getFundamentalFrequency() noexcept;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Harmonicator9000AudioProcessor)
 };

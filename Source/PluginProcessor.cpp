@@ -93,7 +93,7 @@ void Harmonicator9000AudioProcessor::changeProgramName (int index, const juce::S
 }
 
 //==============================================================================
-void Harmonicator9000AudioProcessor::addToFFT(float sample) {
+void Harmonicator9000AudioProcessor::addToFFT(float sample) noexcept{
     //check if the index is at the end of the queue, if so start a new fft process
     if (fifoCounter == fftSize) {
         if (!nextFFTBlockReady) {
@@ -101,6 +101,8 @@ void Harmonicator9000AudioProcessor::addToFFT(float sample) {
             std::fill(fftData.begin(), fftData.end(), 0.0);
             std::copy(fifo.begin(), fifo.end(), fftData.begin());
             nextFFTBlockReady = true;
+            //spawn a thread to go calculate the new fundamental frequency (currently producing like 80 threads)
+            //std::thread fftThread(&Harmonicator9000AudioProcessor::getFundamentalFrequency, this);
 
         }
         fifoCounter = 0;
@@ -109,6 +111,29 @@ void Harmonicator9000AudioProcessor::addToFFT(float sample) {
     fifo[fifoCounter] = sample;
     fifoCounter++;
 }
+
+//==============================================================================
+void Harmonicator9000AudioProcessor::getFundamentalFrequency() noexcept{
+    //perform the FFT, find the max, get its index
+    forwardFFT.performFrequencyOnlyForwardTransform(fftData.data());
+    //locate maximum index via horrendously inneficient search algorithm:
+    int maxIndex = 0;
+    float maxVal = 0.0;
+    for (int i = 0; i < fftSize / 2; ++i) {
+        if (fftData[i] > maxVal) {
+            maxVal = fftData[i];
+            maxIndex = i;
+        }  
+    }
+    //at this point we are done with the FFT array, tell the program it can go ahead and start populating it again
+    nextFFTBlockReady = false;
+    //now map the index to a frequency (doing analog now for testing, will map to digital later, much easier just between 0 - 1)
+    float freq_multiplier = sampleRate / fftSize; //gives us how many hz are represented by each part of the fft
+    fundamentalFreq =  maxIndex * freq_multiplier;
+    exit(0); //exit the thread
+
+}
+//==============================================================================
 
 //==============================================================================
 void Harmonicator9000AudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -164,6 +189,9 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    //update the sample rate
+    sampleRate = getSampleRate();
+
     // This is the place where you'd normally do the guts of your plugin's
     // audio processing...
     // Make sure to reset the state if your inner loop is processing
@@ -197,36 +225,43 @@ bool Harmonicator9000AudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* Harmonicator9000AudioProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor(*this);
-    //return new Harmonicator9000AudioProcessorEditor (*this);
+    //return new juce::GenericAudioProcessorEditor(*this);
+
+    //use a custom GUI instead of the generic one provided
+    return new Harmonicator9000AudioProcessorEditor (*this);
 }
 
 //==============================================================================
 void Harmonicator9000AudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
+    //store the state of the plugin such that it saves user defined parameters between loads
+    juce::MemoryOutputStream memParamSave(destData, true);
+    apvts.state.writeToStream(memParamSave);
+
 }
 
 void Harmonicator9000AudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    //load in the user saved state of parameters instead of resetting everything to default values
+    auto restoredParams = juce::ValueTree::readFromData(data, sizeInBytes);
+    if (restoredParams.isValid()) { //check if the data is copied, if not will auto reset to defaults
+        apvts.replaceState(restoredParams);
+        //might have to call another function here, unsure at this point. 
+    }
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout
 Harmonicator9000AudioProcessor::createParameterLayout() {
     //create all the parameters we will be using as knobs with ranges that
     //make sense (for band volume +/- 15dB, for filtering 100Hz->20kHz,
-    // for synth volume -inf (-50 will be fine) to 0))
+    // for synth volume -inf (-100 will be fine, check for this and just don't activate synth if val = -100) to 0))
     //layed out in the order they will appear on the panel
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     layout.add(std::make_unique<juce::AudioParameterFloat>("oddLowPass",
         "Odd Low Pass", 100.0, 20000.0, 20000.0));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>("oddSynth",
-        "Odd Synth", -50.0, 0.0, -50.0));
+        "Odd Synth", -100.0, 0.0, -100.0));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>("oddHarmonics",
         "Odd Harmonics", -15.0, 15.0, 0.0));
@@ -238,10 +273,11 @@ Harmonicator9000AudioProcessor::createParameterLayout() {
         "Even Harmonics", -15.0, 15.0, 0.0));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>("evenSynth",
-        "Even Synth", -50.0, 0.0, -50.0));
+        "Even Synth", -100.0, 0.0, -100.0));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>("evenLowPass",
         "Even Low Pass", 100.0, 20000.0, 20000.0));
+
     return layout;
 }
 
@@ -251,3 +287,5 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new Harmonicator9000AudioProcessor();
 }
+
+float Harmonicator9000AudioProcessor::fundamentalFreq = 0.0f; // Define static freq variable outside of the class

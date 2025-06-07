@@ -108,9 +108,16 @@ Harmonicator9000AudioProcessorEditor::Harmonicator9000AudioProcessorEditor (Harm
     // editor's size to whatever you need it to be.
     setSize (800, 200);
     freqLabel.setText("Frequency: 0.0 Hz", juce::dontSendNotification);
-    freqLabel.setFont(juce::Font(16.0));
+    freqLabel.setFont(juce::Font(TEXT_HEIGHT_KNOB_LABELS));
     freqLabel.setJustificationType(juce::Justification::centred);
+
+    knobLabels.setText("Odd LP         Odd Synth         Odd Harm            Fundamental            Even Harm         Even Synth         Even LP", 
+        juce::dontSendNotification);
+    knobLabels.setFont(juce::Font(TEXT_HEIGHT_KNOB_LABELS));
+    knobLabels.setJustificationType(juce::Justification::centred);
+
     //make all of the knobs and labels visible on the GUI
+    addAndMakeVisible(knobLabels);
     addAndMakeVisible(freqLabel);
     addAndMakeVisible(fundamentalVol);
     addAndMakeVisible(evenHarmVol);
@@ -142,6 +149,7 @@ void Harmonicator9000AudioProcessorEditor::resized()
     //use the built in bounds component to set where all of the knobs will be located(and their size)
     //note that each time a remove is cakled, the space gets smaller, so to do 1/3 1/3 1/3 its 0.33 0.5 1.0
     auto knobBounds = getLocalBounds();
+    knobLabels.setBounds(knobBounds.removeFromTop(knobBounds.getHeight() * 0.1));
     auto oddHarmonicSector = knobBounds.removeFromLeft(knobBounds.getWidth() * 0.4); //left 40% of the area
     auto fundamentalSector = knobBounds.removeFromLeft(knobBounds.getWidth() * 0.33); //middle 20% of the area
     auto evenHarmonicSector = knobBounds.removeFromLeft(knobBounds.getWidth() * 1.0); //right 40% of the area
@@ -160,6 +168,6 @@ void Harmonicator9000AudioProcessorEditor::resized()
 }
 
 void Harmonicator9000AudioProcessorEditor::timerCallback() {
-    freqLabel.setText(std::to_string(Harmonicator9000AudioProcessor::fundamentalFreq) + " Hz", juce::dontSendNotification);
+    freqLabel.setText(std::to_string(juce::truncatePositiveToUnsignedInt(Harmonicator9000AudioProcessor::fundamentalFreq)) + " Hz", juce::dontSendNotification);
     
 }

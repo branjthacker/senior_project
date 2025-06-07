@@ -11,8 +11,8 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-#define TEXT_HEIGHT_VALUE_LABELS 14;
-#define TEXT_HEIGHT_KNOB_LABELS 16;
+#define TEXT_HEIGHT_VALUE_LABELS 14.0
+#define TEXT_HEIGHT_KNOB_LABELS 16.0
 #define FUNDAMEMTAL_VOL_COLOR juce::Colour(255, 0, 255)
 #define ODD_VOL_COLOR juce::Colour(255, 0, 0)
 #define EVEN_VOL_COLOR juce::Colour(0, 0, 255)
@@ -86,6 +86,7 @@ private:
     Harmonicator9000AudioProcessor& audioProcessor;
     void timerCallback() override;
     juce::Label freqLabel;
+    juce::Label knobLabels;
     paramKnob fundamentalVol;
     paramKnob evenHarmVol;
     paramKnob oddHarmVol;

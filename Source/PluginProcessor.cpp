@@ -22,6 +22,7 @@ Harmonicator9000AudioProcessor::Harmonicator9000AudioProcessor()
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
                        )
+
 #endif
 {
 }
@@ -122,23 +123,37 @@ void Harmonicator9000AudioProcessor::addToCorr(float sample) noexcept{
 //==============================================================================
 //wave generators
 
-float Harmonicator9000AudioProcessor::getNextSquare() noexcept {
-    //update what sample we are at
-    squareNumSamples++;
-    if (squareNumSamples > cycleTimeSamples) {
-        squareNumSamples = 0;
-    }
-    //if we are in the first half of the cycle, return full
-    if (squareNumSamples < (cycleTimeSamples / 2)) {
-        return juce::Decibels::decibelsToGain(evenSynthVol) * avgVol;
-    }
-    else {
-        return -(juce::Decibels::decibelsToGain(evenSynthVol) * avgVol);
+void Harmonicator9000AudioProcessor::getNextSquare() noexcept {
+    int i = 0;
+    while (i < squareOutBuff.size()) {
+        //update what sample we are at
+        squareNumSamples++;
+        if (squareNumSamples >= cycleTimeSamples) {
+            squareNumSamples = 0;
+        }
+        //if we are in the first half of the cycle, return full
+        if (squareNumSamples < (cycleTimeSamples / 2)) {
+            squareOutBuff[i] = juce::Decibels::decibelsToGain(evenSynthVol) * avgVol;
+        }
+        else {
+            squareOutBuff[i] = -(juce::Decibels::decibelsToGain(evenSynthVol) * avgVol);
+        }
+        i++;
     }
 }
 
-float Harmonicator9000AudioProcessor::getNextSaw() noexcept {
-    return 1;
+void Harmonicator9000AudioProcessor::getNextSaw() noexcept {
+    //update, except the count goes in reverse to be able to build the wave properly
+    int i = 0;
+    while (i < sawOutBuff.size()) {
+        sawNumSamples--;
+        if (sawNumSamples <= 0) {
+            sawNumSamples = cycleTimeSamples;
+        }
+        //return the ratio of the num samples / cycle time samples to get the saw pattern * vol
+        sawOutBuff[i] =  (static_cast<float>(sawNumSamples) / static_cast<float>(cycleTimeSamples)) * juce::Decibels::decibelsToGain(oddSynthVol) * avgVol;
+        i++;
+    }
 
 }
 
@@ -194,12 +209,178 @@ void Harmonicator9000AudioProcessor::updateAvg() noexcept {
     processingAvg = false;
 
 }
+//==============================================================================
+void Harmonicator9000AudioProcessor::updateFilters() noexcept {
+    //use the booleans to check which filter we need to update then update that one
+    float fundamentalCopy = fundamentalFreq; //make a copy so it remains consistent throughout the thread
+    //prepare all the coeficients (they will be the same no matter which group is updated)
+    auto genericCoefs = juce::dsp::IIR::Coefficients<float>::makeAllPass(
+        sampleRate,
+        300
+    );
+    auto fundamentalCoefs = genericCoefs;
+    auto oddOneCoefs = genericCoefs;
+    auto oddTwoCoefs = genericCoefs;
+    auto oddThreeCoefs = genericCoefs;
+    auto oddFourCoefs = genericCoefs;
+    auto evenOneCoefs = genericCoefs;
+    auto evenTwoCoefs = genericCoefs;
+    auto evenThreeCoefs = genericCoefs;
+    auto evenFourCoefs = genericCoefs;
+
+    if (fundamentalCopy < sampleRate / 2) {
+        fundamentalCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(fundamentalVol)
+        );
+    }
+    if (fundamentalCopy * 3 < sampleRate / 2) {
+        oddOneCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 3,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(oddHarmVol)
+        );
+    }
+    if (fundamentalCopy * 5 < sampleRate / 2) {
+        oddTwoCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 5,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(oddHarmVol)
+        );
+    }
+    if (fundamentalCopy * 7 < sampleRate / 2) {
+        oddThreeCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 7,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(oddHarmVol)
+        );
+    }
+    if (fundamentalCopy * 9 < sampleRate / 2) {
+        oddFourCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 9,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(oddHarmVol)
+        );
+    }
+    if (fundamentalCopy * 2 < sampleRate / 2) {
+        evenOneCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 2,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(evenHarmVol)
+        );
+    }
+    if (fundamentalCopy * 4 < sampleRate / 2) {
+        evenTwoCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 4,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(evenHarmVol)
+        );
+    }
+    if (fundamentalCopy * 6 < sampleRate / 2) {
+        evenThreeCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 6,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(evenHarmVol)
+        );
+    }
+    if (fundamentalCopy * 8 < sampleRate / 2) {
+        evenFourCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            sampleRate,
+            fundamentalCopy * 8,
+            FILTER_QUALITY,
+            juce::Decibels::decibelsToGain(evenHarmVol)
+        );
+    }
+    if (!grpArdy && !usingGrpA) {
+        //update group A here
+        fundamentalBand_groupA.coefficients = fundamentalCoefs;
+        firstOddBand_groupA.coefficients = oddOneCoefs;
+        secondOddBand_groupA.coefficients = oddTwoCoefs;
+        thirdOddBand_groupA.coefficients = oddThreeCoefs;
+        fourthOddBand_groupA.coefficients = oddFourCoefs;
+        firstEvenBand_groupA.coefficients = evenOneCoefs;
+        secondEvenBand_groupA.coefficients = evenTwoCoefs;
+        thirdEvenBand_groupA.coefficients = evenThreeCoefs;
+        fourthEvenBand_groupA.coefficients = evenFourCoefs;
+        grpArdy = true;
+        
+    }
+    else if (!grpBrdy && !usingGrpB) {
+        //update group B here
+        fundamentalBand_groupB.coefficients = fundamentalCoefs;
+        firstOddBand_groupB.coefficients = oddOneCoefs;
+        secondOddBand_groupB.coefficients = oddTwoCoefs;
+        thirdOddBand_groupB.coefficients = oddThreeCoefs;
+        fourthOddBand_groupB.coefficients = oddFourCoefs;
+        firstEvenBand_groupB.coefficients = evenOneCoefs;
+        secondEvenBand_groupB.coefficients = evenTwoCoefs;
+        thirdEvenBand_groupB.coefficients = evenThreeCoefs;
+        fourthEvenBand_groupB.coefficients = evenFourCoefs;
+        grpBrdy = true;
+    }
+}
 
 //==============================================================================
 void Harmonicator9000AudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
+
+    //update the sample rate
+    Harmonicator9000AudioProcessor::sampleRate = sampleRate;
+
+    //set the mode of various filters
+    oddLowPass.setMode(juce::dsp::LadderFilterMode::LPF24);
+    evenLowPass.setMode(juce::dsp::LadderFilterMode::LPF24);
+
+    //set the synth output buffers to the samplesPerBlock size
+    squareOutBuff.resize(samplesPerBlock);
+    sawOutBuff.resize(samplesPerBlock);
+    //create a spec to use for all of the filters
+    juce::dsp::ProcessSpec filtSpec;
+    filtSpec.sampleRate = sampleRate;
+    filtSpec.maximumBlockSize = samplesPerBlock;
+    filtSpec.numChannels = getTotalNumOutputChannels();
+
+    //prepare all of the filters
+    oddLowPass.prepare(filtSpec);
+    evenLowPass.prepare(filtSpec);
+    fundamentalBand_groupA.prepare(filtSpec);
+    firstOddBand_groupA.prepare(filtSpec);
+    secondOddBand_groupA.prepare(filtSpec);
+    thirdOddBand_groupA.prepare(filtSpec);
+    fourthOddBand_groupA.prepare(filtSpec);
+    firstEvenBand_groupA.prepare(filtSpec);
+    secondEvenBand_groupA.prepare(filtSpec);
+    thirdEvenBand_groupA.prepare(filtSpec);
+    fourthEvenBand_groupA.prepare(filtSpec);
+    //2nd group to enable processing while calculating coefficients in parallel
+    fundamentalBand_groupB.prepare(filtSpec);
+    firstOddBand_groupB.prepare(filtSpec);
+    secondOddBand_groupB.prepare(filtSpec);
+    thirdOddBand_groupB.prepare(filtSpec);
+    fourthOddBand_groupB.prepare(filtSpec);
+    firstEvenBand_groupB.prepare(filtSpec);
+    secondEvenBand_groupB.prepare(filtSpec);
+    thirdEvenBand_groupB.prepare(filtSpec);
+    fourthEvenBand_groupB.prepare(filtSpec);
+
+    //set up filters in a startup state so that the process block will actually work
+    usingGrpA = true;
+    grpArdy = true;
+    grpBrdy = false;
+    usingGrpB = false;
+    //this should make group b activate using defaults, then things will start updating as normal
+    updateFilters();
 
     getUserDefinedSettings(apvts);
 }
@@ -251,36 +432,90 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    //update the sample rate
-    sampleRate = getSampleRate();
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
+    
+    //generate and filter the buffers from each synth engine, then just add them in in the below processing (might need to thread this later)
+    if (evenSynthVol > -100.0 && avgVol > CRITICAL_VOLUME_THRESH) {
+        evenLowPass.setCutoffFrequencyHz(evenLP);
+        getNextSquare();
+        //wrap the buffer in a context (this is how JUCE needs it to happen apperantly)
+        jassert(squareOutBuff.data() != nullptr);
+        std::vector<float*> filterData = { squareOutBuff.data() };
+        juce::dsp::AudioBlock<float> squareBlock(filterData.data(), 1, squareOutBuff.size());
+        juce::dsp::ProcessContextReplacing<float> context(squareBlock);
+        //filter it
+        evenLowPass.process(context);
+    }
+    if (oddSynthVol > -100.0 && avgVol > CRITICAL_VOLUME_THRESH) {
+        oddLowPass.setCutoffFrequencyHz(oddLP);
+        getNextSaw();
+        //wrap the buffer in a context (this is how JUCE needs it to happen apperantly)
+        jassert(sawOutBuff.data() != nullptr);
+        std::vector<float*> filterData = { sawOutBuff.data() };
+        juce::dsp::AudioBlock<float> sawBlock(filterData.data(), 1, sawOutBuff.size());
+        juce::dsp::ProcessContextReplacing<float> context(sawBlock);
+        //filter it
+        oddLowPass.process(context);
+    }
+    //check on how our filters are doing, switch them up if needed
+    if (usingGrpA && grpBrdy) {
+        //switch over to group B, spawn a thread to recalculate group A
+        usingGrpB = true;
+        usingGrpA = false;
+        grpArdy = false;
+        std::thread filterThread(&Harmonicator9000AudioProcessor::updateFilters, this);
+        filterThread.detach(); //let the thread go frolic on its own
+
+    }
+    else if (usingGrpB && grpArdy) {
+        usingGrpB = false;
+        usingGrpA = true;
+        grpBrdy = false;
+        std::thread filterThread(&Harmonicator9000AudioProcessor::updateFilters, this);
+        filterThread.detach(); //let the thread go frolic on its own
+    }
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        auto* channelData = buffer.getWritePointer (channel);
+        auto* channelData = buffer.getWritePointer(channel);
         //here: call a function that will add the sample to the DSP FIFO, increment the counter, set the
         //boolean if we are ready to do the calc (and reset the pointer)
         for (int i = 0; i < buffer.getNumSamples(); ++i) {
             if (channel == 1) {
                 addToCorr(channelData[i]); //only process one channel for frequency or the buffers will get messed up
             }
-            if (evenSynthVol > -100.0 || avgVol > CRITICAL_VOLUME_THRESH) {
-                channelData[i] += getNextSquare();
+            if (evenSynthVol > -100.0 && avgVol > CRITICAL_VOLUME_THRESH) {
+                channelData[i] += squareOutBuff[i];
+            }
+            if (oddSynthVol > -100.0 && avgVol > CRITICAL_VOLUME_THRESH) {
+                channelData[i] += sawOutBuff[i];
             }
         }
-        //call the multiply add chain program
-        //call a function that returns the next sample for the harmonic synths and adds those
-        //in the FFT THREAD: when the boolean is set, wake up, calculate the FFT, calculate fundamental frequency, go to sleep.
-        //in the coefficient calculator: when the fundamental frequency is changed, wake up, calculate coefficients, set a semaphore,
-        //update the coefficients in the multiply add function, go back to sleep
-        //when knobs are changed: change coefficients that each filtered sound will be multipled by?
-
-        // ..do something to the data...
+        //process the audio through the harmonic filtering
+        std::vector<float*> harmFiltData = { channelData };
+        juce::dsp::AudioBlock<float> harmBlock(harmFiltData.data(), 1, buffer.getNumSamples());
+        juce::dsp::ProcessContextReplacing<float> harmContext(harmBlock);
+        if (usingGrpA) {
+            fundamentalBand_groupA.process(harmContext);
+            firstOddBand_groupA.process(harmContext);
+            secondOddBand_groupA.process(harmContext);
+            thirdOddBand_groupA.process(harmContext);
+            fourthOddBand_groupA.process(harmContext);
+            firstEvenBand_groupA.process(harmContext);
+            secondEvenBand_groupA.process(harmContext);
+            thirdEvenBand_groupA.process(harmContext);
+            fourthEvenBand_groupA.process(harmContext);
+        }
+        else if (usingGrpB) {
+            fundamentalBand_groupB.process(harmContext);
+            firstOddBand_groupB.process(harmContext);
+            secondOddBand_groupB.process(harmContext);
+            thirdOddBand_groupB.process(harmContext);
+            fourthOddBand_groupB.process(harmContext);
+            firstEvenBand_groupB.process(harmContext);
+            secondEvenBand_groupB.process(harmContext);
+            thirdEvenBand_groupB.process(harmContext);
+            fourthEvenBand_groupB.process(harmContext);
+        }
     }
 }
 
@@ -374,7 +609,7 @@ float Harmonicator9000AudioProcessor::oddHarmVol = 0.0;
 float Harmonicator9000AudioProcessor::evenHarmVol = 0.0;
 float Harmonicator9000AudioProcessor::oddLP = 20000.0;
 float Harmonicator9000AudioProcessor::evenLP = 20000.0;
-int Harmonicator9000AudioProcessor::cycleTimeSamples = 0; //cycle time in samples (calculated based off frequency each time it changes)
+int Harmonicator9000AudioProcessor::cycleTimeSamples = 1; //cycle time in samples (calculated based off frequency each time it changes, can never be 0)
 int Harmonicator9000AudioProcessor::squareNumSamples = 0; //number of samples square wave generator has spent in the current cycle
-int Harmonicator9000AudioProcessor::sawNumCycles = 0; //number of samples saw wave generator has spent in the current cycle
+int Harmonicator9000AudioProcessor::sawNumSamples = 0; //number of samples saw wave generator has spent in the current cycle
 float Harmonicator9000AudioProcessor::avgVol = 0.0;

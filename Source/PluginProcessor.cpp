@@ -213,6 +213,14 @@ void Harmonicator9000AudioProcessor::updateAvg() noexcept {
 void Harmonicator9000AudioProcessor::updateFilters() noexcept {
     //use the booleans to check which filter we need to update then update that one
     float fundamentalCopy = fundamentalFreq; //make a copy so it remains consistent throughout the thread
+    float oddVolCopy = oddHarmVol;
+    float evenVolCopy = evenHarmVol;
+    float fundVolCopy = fundamentalVol;
+    //reset these flags
+    lastFreq = fundamentalCopy;
+    lastEvenVol = evenVolCopy;
+    lastOddVol = oddVolCopy;
+    lastFundVol = fundVolCopy;
     //prepare all the coeficients (they will be the same no matter which group is updated)
     auto genericCoefs = juce::dsp::IIR::Coefficients<float>::makeAllPass(
         sampleRate,
@@ -233,7 +241,7 @@ void Harmonicator9000AudioProcessor::updateFilters() noexcept {
             sampleRate,
             fundamentalCopy,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(fundamentalVol)
+            juce::Decibels::decibelsToGain(fundVolCopy)
         );
     }
     if (fundamentalCopy * 3 < sampleRate / 2) {
@@ -241,7 +249,7 @@ void Harmonicator9000AudioProcessor::updateFilters() noexcept {
             sampleRate,
             fundamentalCopy * 3,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(oddHarmVol)
+            juce::Decibels::decibelsToGain(oddVolCopy)
         );
     }
     if (fundamentalCopy * 5 < sampleRate / 2) {
@@ -249,7 +257,7 @@ void Harmonicator9000AudioProcessor::updateFilters() noexcept {
             sampleRate,
             fundamentalCopy * 5,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(oddHarmVol)
+            juce::Decibels::decibelsToGain(oddVolCopy)
         );
     }
     if (fundamentalCopy * 7 < sampleRate / 2) {
@@ -257,23 +265,23 @@ void Harmonicator9000AudioProcessor::updateFilters() noexcept {
             sampleRate,
             fundamentalCopy * 7,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(oddHarmVol)
+            juce::Decibels::decibelsToGain(oddVolCopy)
         );
     }
-    if (fundamentalCopy * 9 < sampleRate / 2) {
+   /* if (fundamentalCopy * 9 < sampleRate / 2) {
         oddFourCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
             sampleRate,
             fundamentalCopy * 9,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(oddHarmVol)
+            juce::Decibels::decibelsToGain(oddVolCopy)
         );
-    }
+    }*/
     if (fundamentalCopy * 2 < sampleRate / 2) {
         evenOneCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
             sampleRate,
             fundamentalCopy * 2,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(evenHarmVol)
+            juce::Decibels::decibelsToGain(evenVolCopy)
         );
     }
     if (fundamentalCopy * 4 < sampleRate / 2) {
@@ -281,7 +289,7 @@ void Harmonicator9000AudioProcessor::updateFilters() noexcept {
             sampleRate,
             fundamentalCopy * 4,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(evenHarmVol)
+            juce::Decibels::decibelsToGain(evenVolCopy)
         );
     }
     if (fundamentalCopy * 6 < sampleRate / 2) {
@@ -289,28 +297,28 @@ void Harmonicator9000AudioProcessor::updateFilters() noexcept {
             sampleRate,
             fundamentalCopy * 6,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(evenHarmVol)
+            juce::Decibels::decibelsToGain(evenVolCopy)
         );
     }
-    if (fundamentalCopy * 8 < sampleRate / 2) {
+   /* if (fundamentalCopy * 8 < sampleRate / 2) {
         evenFourCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
             sampleRate,
             fundamentalCopy * 8,
             FILTER_QUALITY,
-            juce::Decibels::decibelsToGain(evenHarmVol)
+            juce::Decibels::decibelsToGain(evenVolCopy)
         );
-    }
+    }*/
     if (!grpArdy && !usingGrpA) {
         //update group A here
         fundamentalBand_groupA.coefficients = fundamentalCoefs;
         firstOddBand_groupA.coefficients = oddOneCoefs;
         secondOddBand_groupA.coefficients = oddTwoCoefs;
         thirdOddBand_groupA.coefficients = oddThreeCoefs;
-        fourthOddBand_groupA.coefficients = oddFourCoefs;
+      //  fourthOddBand_groupA.coefficients = oddFourCoefs;
         firstEvenBand_groupA.coefficients = evenOneCoefs;
         secondEvenBand_groupA.coefficients = evenTwoCoefs;
         thirdEvenBand_groupA.coefficients = evenThreeCoefs;
-        fourthEvenBand_groupA.coefficients = evenFourCoefs;
+       // fourthEvenBand_groupA.coefficients = evenFourCoefs;
         grpArdy = true;
         
     }
@@ -320,11 +328,11 @@ void Harmonicator9000AudioProcessor::updateFilters() noexcept {
         firstOddBand_groupB.coefficients = oddOneCoefs;
         secondOddBand_groupB.coefficients = oddTwoCoefs;
         thirdOddBand_groupB.coefficients = oddThreeCoefs;
-        fourthOddBand_groupB.coefficients = oddFourCoefs;
+      //  fourthOddBand_groupB.coefficients = oddFourCoefs;
         firstEvenBand_groupB.coefficients = evenOneCoefs;
         secondEvenBand_groupB.coefficients = evenTwoCoefs;
         thirdEvenBand_groupB.coefficients = evenThreeCoefs;
-        fourthEvenBand_groupB.coefficients = evenFourCoefs;
+      //  fourthEvenBand_groupB.coefficients = evenFourCoefs;
         grpBrdy = true;
     }
 }
@@ -458,21 +466,23 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         oddLowPass.process(context);
     }
     //check on how our filters are doing, switch them up if needed
-    if (usingGrpA && grpBrdy) {
-        //switch over to group B, spawn a thread to recalculate group A
-        usingGrpB = true;
-        usingGrpA = false;
-        grpArdy = false;
-        std::thread filterThread(&Harmonicator9000AudioProcessor::updateFilters, this);
-        filterThread.detach(); //let the thread go frolic on its own
+    if (!((lastFundVol == fundamentalVol) && (lastFreq == fundamentalFreq) && (lastOddVol == oddHarmVol) && (lastEvenVol == evenHarmVol))) {
+        if (usingGrpA && grpBrdy) {
+            //switch over to group B, spawn a thread to recalculate group A
+            usingGrpB = true;
+            usingGrpA = false;
+            grpArdy = false;
+            std::thread filterThread(&Harmonicator9000AudioProcessor::updateFilters, this);
+            filterThread.detach(); //let the thread go frolic on its own
 
-    }
-    else if (usingGrpB && grpArdy) {
-        usingGrpB = false;
-        usingGrpA = true;
-        grpBrdy = false;
-        std::thread filterThread(&Harmonicator9000AudioProcessor::updateFilters, this);
-        filterThread.detach(); //let the thread go frolic on its own
+        }
+        else if (usingGrpB && grpArdy) {
+            usingGrpB = false;
+            usingGrpA = true;
+            grpBrdy = false;
+            std::thread filterThread(&Harmonicator9000AudioProcessor::updateFilters, this);
+            filterThread.detach(); //let the thread go frolic on its own
+        }
     }
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
@@ -489,6 +499,7 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             if (oddSynthVol > -100.0 && avgVol > CRITICAL_VOLUME_THRESH) {
                 channelData[i] += sawOutBuff[i];
             }
+            channelData[i] = channelData[i] / 2; //vol reduction to prevent peaking
         }
         //process the audio through the harmonic filtering
         std::vector<float*> harmFiltData = { channelData };
@@ -499,22 +510,22 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             firstOddBand_groupA.process(harmContext);
             secondOddBand_groupA.process(harmContext);
             thirdOddBand_groupA.process(harmContext);
-            fourthOddBand_groupA.process(harmContext);
+            //fourthOddBand_groupA.process(harmContext);
             firstEvenBand_groupA.process(harmContext);
             secondEvenBand_groupA.process(harmContext);
             thirdEvenBand_groupA.process(harmContext);
-            fourthEvenBand_groupA.process(harmContext);
+            //fourthEvenBand_groupA.process(harmContext);
         }
         else if (usingGrpB) {
             fundamentalBand_groupB.process(harmContext);
             firstOddBand_groupB.process(harmContext);
             secondOddBand_groupB.process(harmContext);
             thirdOddBand_groupB.process(harmContext);
-            fourthOddBand_groupB.process(harmContext);
+            //fourthOddBand_groupB.process(harmContext);
             firstEvenBand_groupB.process(harmContext);
             secondEvenBand_groupB.process(harmContext);
             thirdEvenBand_groupB.process(harmContext);
-            fourthEvenBand_groupB.process(harmContext);
+            //fourthEvenBand_groupB.process(harmContext);
         }
     }
 }

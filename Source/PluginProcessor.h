@@ -14,7 +14,7 @@
 #define LARGE_PITCH_ARRAY_SIZE 3000
 #define CRITICAL_SAMPLE_SHIFT 5 //the amount of samples that are needed to trigger an actual change
 #define CRITICAL_VOLUME_THRESH 0.005 //avg input volume must be above this for any synth generation or frequency updating (basically a gate)
-#define FILTER_QUALITY 10.0 //define the Q for low pass filters on synth generators (adjust to taste)
+#define FILTER_QUALITY 2.0 //define the Q for low pass filters on synth generators (adjust to taste)
 
 void getUserDefinedSettings(juce::AudioProcessorValueTreeState& apvts);
 
@@ -95,6 +95,11 @@ private:
     bool grpBrdy = false;
     bool usingGrpA = false;
     bool usingGrpB = false;
+    //variables that hold the last state of vol and freq, we only update filters if they actually change
+    float lastFreq= 1.0;
+    float lastFundVol = 0.0;
+    float lastOddVol = 0.0;
+    float lastEvenVol = 0.0;
 
     double sampleRate = 48000; //default sample rate, change in process audio block
     //function to add sample to fft

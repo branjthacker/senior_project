@@ -10,6 +10,7 @@
 #include "PluginEditor.h"
 
 
+
 //==============================================================================
 Harmonicator9000AudioProcessor::Harmonicator9000AudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -20,8 +21,7 @@ Harmonicator9000AudioProcessor::Harmonicator9000AudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       ),
-       forwardFFT (fftOrder) //initialize the fft object
+                       )
 #endif
 {
 }
@@ -93,53 +93,115 @@ void Harmonicator9000AudioProcessor::changeProgramName (int index, const juce::S
 }
 
 //==============================================================================
-void Harmonicator9000AudioProcessor::addToFFT(float sample) noexcept{
+void Harmonicator9000AudioProcessor::addToCorr(float sample) noexcept{
     //check if the index is at the end of the queue, if so start a new fft process
-    if (fifoCounter == fftSize) {
-        if (!nextFFTBlockReady) {
-            //the fft is done and the output has been taken into a new thread, we can start the next fft
-            std::fill(fftData.begin(), fftData.end(), 0.0);
-            std::copy(fifo.begin(), fifo.end(), fftData.begin());
-            nextFFTBlockReady = true;
+    if (corrCounter == LARGE_PITCH_ARRAY_SIZE) {
+        if (!processingAvg) {
+            std::copy(largePitchArray.begin(), largePitchArray.end(), avgVolArray.begin());
+            processingAvg = true;
+            //spawn a thread to do our dirty work
+            std::thread avgThread(&Harmonicator9000AudioProcessor::updateAvg, this);
+            avgThread.detach(); //let the thread go frolic on its own
+        }
+        if (!nextCorrBlockReady) {
+            //the correlation calcs have completed, we can start a new one
+            //add the first 256 samples in largePitchArray to the small array
+            std::copy(largePitchArray.begin(), largePitchArray.begin() + SMALL_PITCH_ARRAY_SIZE, smallPitchArray.begin());
+            nextCorrBlockReady = true;
             //spawn a thread to go calculate the new fundamental frequency (currently producing like 80 threads)
-            //std::thread fftThread(&Harmonicator9000AudioProcessor::getFundamentalFrequency, this);
+            std::thread corrThread(&Harmonicator9000AudioProcessor::getFundamentalFrequency, this);
+            corrThread.detach(); //let the thread go frolic on its own
 
         }
-        fifoCounter = 0;
+        corrCounter = 0;
     }
     //add sample and advance the counter
-    fifo[fifoCounter] = sample;
-    fifoCounter++;
+    largePitchArray[corrCounter] = sample;
+    corrCounter++;
+}
+//==============================================================================
+//wave generators
+
+float Harmonicator9000AudioProcessor::getNextSquare() noexcept {
+    //update what sample we are at
+    squareNumSamples++;
+    if (squareNumSamples > cycleTimeSamples) {
+        squareNumSamples = 0;
+    }
+    //if we are in the first half of the cycle, return full
+    if (squareNumSamples < (cycleTimeSamples / 2)) {
+        return juce::Decibels::decibelsToGain(evenSynthVol) * avgVol;
+    }
+    else {
+        return -(juce::Decibels::decibelsToGain(evenSynthVol) * avgVol);
+    }
+}
+
+float Harmonicator9000AudioProcessor::getNextSaw() noexcept {
+    return 1;
+
 }
 
 //==============================================================================
 void Harmonicator9000AudioProcessor::getFundamentalFrequency() noexcept{
-    //perform the FFT, find the max, get its index
-    forwardFFT.performFrequencyOnlyForwardTransform(fftData.data());
-    //locate maximum index via horrendously inneficient search algorithm:
-    int maxIndex = 0;
-    float maxVal = 0.0;
-    for (int i = 0; i < fftSize / 2; ++i) {
-        if (fftData[i] > maxVal) {
-            maxVal = fftData[i];
-            maxIndex = i;
-        }  
+    //while we're here, this is a great time to see im the user updated any knobs
+    getUserDefinedSettings(apvts);
+    //perform the autocorrelation, find the first strongest peak, do math to determine frequency
+    //keep track of the most minimum index ( this will give how many samples our wave cycle is (hopefully))
+    //todo: add some more percice checking, it can easily drop up or down an octave right now.
+    //do not update the pitch below a certian volume
+    int minIndex = 0;
+    float minVal = 999999999999; //some absurdly large number
+    //keep track of how far we've shifted the larger array
+    int indexOffset = 8; //start slightly offset because the first samples will obviously line up.
+    
+    while (indexOffset < LARGE_PITCH_ARRAY_SIZE - SMALL_PITCH_ARRAY_SIZE) {
+        float accumDiff = 0;
+        int i = 0;
+        while (i < SMALL_PITCH_ARRAY_SIZE) {
+            //go through each sample of the small array and subtract it from the big array at it's offset index from i
+            accumDiff += abs(smallPitchArray[i] - largePitchArray[i + indexOffset]);
+            i++;
+        }
+        //compare this to the local minimum and maximum
+        if (accumDiff < minVal) {
+            minIndex = indexOffset;
+            minVal = accumDiff;
+        }
+        indexOffset++;
     }
-    //at this point we are done with the FFT array, tell the program it can go ahead and start populating it again
-    nextFFTBlockReady = false;
-    //now map the index to a frequency (doing analog now for testing, will map to digital later, much easier just between 0 - 1)
-    float freq_multiplier = sampleRate / fftSize; //gives us how many hz are represented by each part of the fft
-    fundamentalFreq =  maxIndex * freq_multiplier;
-    exit(0); //exit the thread
+    //if the frequency change is significant, update it
+    if ((minIndex > cycleTimeSamples + CRITICAL_SAMPLE_SHIFT ||
+        minIndex < cycleTimeSamples - CRITICAL_SAMPLE_SHIFT) && 
+        avgVol > CRITICAL_VOLUME_THRESH) {
+        //map this to an analog frequency based on sample rate. (sample rate / minIndex)
+        fundamentalFreq = sampleRate / minIndex;
+        cycleTimeSamples = minIndex; //update for the wave generators
+    }
+    nextCorrBlockReady = false; //new thread can be spawned now, we're leaving this one
 
 }
 //==============================================================================
+void Harmonicator9000AudioProcessor::updateAvg() noexcept {
+    //use the avgVolArray to update avgVol.
+    int i = 0;
+    float tmpAvg = 0.0;
+    while (i < avgVolArray.size()) {
+        tmpAvg += abs(avgVolArray[i]);
+        i++;
+    }
+    avgVol = tmpAvg / LARGE_PITCH_ARRAY_SIZE;
+    processingAvg = false;
+
+}
 
 //==============================================================================
 void Harmonicator9000AudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
+
+    getUserDefinedSettings(apvts);
 }
 
 void Harmonicator9000AudioProcessor::releaseResources()
@@ -204,7 +266,12 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         //here: call a function that will add the sample to the DSP FIFO, increment the counter, set the
         //boolean if we are ready to do the calc (and reset the pointer)
         for (int i = 0; i < buffer.getNumSamples(); ++i) {
-            addToFFT(channelData[i]);
+            if (channel == 1) {
+                addToCorr(channelData[i]); //only process one channel for frequency or the buffers will get messed up
+            }
+            if (evenSynthVol > -100.0 || avgVol > CRITICAL_VOLUME_THRESH) {
+                channelData[i] += getNextSquare();
+            }
         }
         //call the multiply add chain program
         //call a function that returns the next sample for the harmonic synths and adds those
@@ -281,6 +348,17 @@ Harmonicator9000AudioProcessor::createParameterLayout() {
     return layout;
 }
 
+void getUserDefinedSettings(juce::AudioProcessorValueTreeState& apvts) {
+    //populates all of the settings as they are defined in the GUI
+    Harmonicator9000AudioProcessor::oddLP = apvts.getRawParameterValue("oddLowPass")->load();
+    Harmonicator9000AudioProcessor::oddSynthVol = apvts.getRawParameterValue("oddSynth")->load();
+    Harmonicator9000AudioProcessor::oddHarmVol = apvts.getRawParameterValue("oddHarmonics")->load();
+    Harmonicator9000AudioProcessor::fundamentalVol = apvts.getRawParameterValue("fundamental")->load();
+    Harmonicator9000AudioProcessor::evenHarmVol = apvts.getRawParameterValue("evenHarmonics")->load();
+    Harmonicator9000AudioProcessor::evenSynthVol = apvts.getRawParameterValue("evenSynth")->load();
+    Harmonicator9000AudioProcessor::evenLP = apvts.getRawParameterValue("evenLowPass")->load();
+}
+
 //==============================================================================
 // This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
@@ -288,4 +366,15 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
     return new Harmonicator9000AudioProcessor();
 }
 
-float Harmonicator9000AudioProcessor::fundamentalFreq = 0.0f; // Define static freq variable outside of the class
+float Harmonicator9000AudioProcessor::fundamentalFreq = 100.0; // Define static freq variable outside of the class
+float Harmonicator9000AudioProcessor::evenSynthVol = -100.0; //same with all the other adjustable variables
+float Harmonicator9000AudioProcessor::oddSynthVol = -100.0;
+float Harmonicator9000AudioProcessor::fundamentalVol = 0.0;
+float Harmonicator9000AudioProcessor::oddHarmVol = 0.0;
+float Harmonicator9000AudioProcessor::evenHarmVol = 0.0;
+float Harmonicator9000AudioProcessor::oddLP = 20000.0;
+float Harmonicator9000AudioProcessor::evenLP = 20000.0;
+int Harmonicator9000AudioProcessor::cycleTimeSamples = 0; //cycle time in samples (calculated based off frequency each time it changes)
+int Harmonicator9000AudioProcessor::squareNumSamples = 0; //number of samples square wave generator has spent in the current cycle
+int Harmonicator9000AudioProcessor::sawNumCycles = 0; //number of samples saw wave generator has spent in the current cycle
+float Harmonicator9000AudioProcessor::avgVol = 0.0;

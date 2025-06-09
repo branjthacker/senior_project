@@ -168,6 +168,6 @@ void Harmonicator9000AudioProcessorEditor::resized()
 }
 
 void Harmonicator9000AudioProcessorEditor::timerCallback() {
-    freqLabel.setText(std::to_string(juce::truncatePositiveToUnsignedInt(Harmonicator9000AudioProcessor::fundamentalFreq)) + " Hz", juce::dontSendNotification);
-    
+    freqLabel.setText(std::to_string(Harmonicator9000AudioProcessor::fundamentalFreq) + " Hz", juce::dontSendNotification);
+    //juce::truncatePositiveToUnsignedInt(Harmonicator9000AudioProcessor::fundamentalFreq)
 }

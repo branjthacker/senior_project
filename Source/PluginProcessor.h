@@ -10,12 +10,14 @@
 
 #include <JuceHeader.h>
 
-#define SMALL_PITCH_ARRAY_SIZE 256
-#define LARGE_PITCH_ARRAY_SIZE 3000
+#define SMALL_PITCH_ARRAY_SIZE 200
+#define LARGE_PITCH_ARRAY_SIZE 2500
 #define CRITICAL_SAMPLE_SHIFT 5 //the amount of samples that are needed to trigger an actual change
-#define CRITICAL_VOLUME_THRESH 0.005 //avg input volume must be above this for any synth generation or frequency updating (basically a gate)
-#define FILTER_QUALITY 2.0 //define the Q for low pass filters on synth generators (adjust to taste)
-
+#define CRITICAL_VOLUME_THRESH 0.006 //avg input volume must be above this for any synth generation or frequency updating (basically a gate)
+#define FILTER_QUALITY 10.0 //define the Q for low pass filters on synth generators (adjust to taste)
+#define PITCH_DETECTION_THRESH 0.1 //must be at least this amound smaller for a new pitch to be registered
+#define MINIMUM_FREQ 40 //define the minimum and maximum frequencies servicable by the plugin (setup for bass, could add toggle in the future)
+#define MAX_FREQ 392
 void getUserDefinedSettings(juce::AudioProcessorValueTreeState& apvts);
 
 //==============================================================================
@@ -90,17 +92,23 @@ private:
     int corrCounter = 0; //counts up to LARGE_PITCH_ARRAY_SIZE samples, fills buffers and triggers a calc, then resets
     bool nextCorrBlockReady = false; //set true when the corr is triggered, corr sets false when it is done.
     bool processingAvg = false; //set high before the processingAvg function is called, set low when done
-    //booleans to communicate between processes about which filters are in what stage
-    bool grpArdy = false;
-    bool grpBrdy = false;
-    bool usingGrpA = false;
-    bool usingGrpB = false;
+    bool coefficientsRdy = false; //say weather or not new coefficients are ready
+    float lastFreqPitch = 1.0; //the previous frequency, this needs to equal current frequency for an actual pitch update to prevent glitching
     //variables that hold the last state of vol and freq, we only update filters if they actually change
     float lastFreq= 1.0;
     float lastFundVol = 0.0;
     float lastOddVol = 0.0;
     float lastEvenVol = 0.0;
-
+    //declare all of the coefficient holding variables
+    juce::dsp::IIR::Coefficients<float>::Ptr fundamentalCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr oddOneCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr oddTwoCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr oddThreeCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr oddFourCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr evenOneCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr evenTwoCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr evenThreeCoefs;
+    juce::dsp::IIR::Coefficients<float>::Ptr evenFourCoefs;
     double sampleRate = 48000; //default sample rate, change in process audio block
     //function to add sample to fft
     void addToCorr(float sample) noexcept;
@@ -119,27 +127,26 @@ private:
     juce::dsp::LadderFilter<float> oddLowPass;
     juce::dsp::LadderFilter<float> evenLowPass;
 
-    //declare all of the filters for our fundamental frequency and harmonics (high Q peaking filters)
-    juce::dsp::IIR::Filter<float> fundamentalBand_groupA;
-    juce::dsp::IIR::Filter<float> firstOddBand_groupA;
-    juce::dsp::IIR::Filter<float> secondOddBand_groupA;
-    juce::dsp::IIR::Filter<float> thirdOddBand_groupA;
-    juce::dsp::IIR::Filter<float> fourthOddBand_groupA;
-    juce::dsp::IIR::Filter<float> firstEvenBand_groupA;
-    juce::dsp::IIR::Filter<float> secondEvenBand_groupA;
-    juce::dsp::IIR::Filter<float> thirdEvenBand_groupA;
-    juce::dsp::IIR::Filter<float> fourthEvenBand_groupA;
-    //2nd group to enable processing while calculating coefficients in parallel
-    juce::dsp::IIR::Filter<float> fundamentalBand_groupB;
-    juce::dsp::IIR::Filter<float> firstOddBand_groupB;
-    juce::dsp::IIR::Filter<float> secondOddBand_groupB;
-    juce::dsp::IIR::Filter<float> thirdOddBand_groupB;
-    juce::dsp::IIR::Filter<float> fourthOddBand_groupB;
-    juce::dsp::IIR::Filter<float> firstEvenBand_groupB;
-    juce::dsp::IIR::Filter<float> secondEvenBand_groupB;
-    juce::dsp::IIR::Filter<float> thirdEvenBand_groupB;
-    juce::dsp::IIR::Filter<float> fourthEvenBand_groupB;
+    //declare all of the filters for our fundamental frequency and harmonics (high Q peaking filters, stereo)
+    juce::dsp::IIR::Filter<float> fundamentalBandL;
+    juce::dsp::IIR::Filter<float> firstOddBandL;
+    juce::dsp::IIR::Filter<float> secondOddBandL;
+    juce::dsp::IIR::Filter<float> thirdOddBandL;
+    juce::dsp::IIR::Filter<float> fourthOddBandL;
+    juce::dsp::IIR::Filter<float> firstEvenBandL;
+    juce::dsp::IIR::Filter<float> secondEvenBandL;
+    juce::dsp::IIR::Filter<float> thirdEvenBandL;
+    juce::dsp::IIR::Filter<float> fourthEvenBandL;
 
-    
+    juce::dsp::IIR::Filter<float> fundamentalBandR;
+    juce::dsp::IIR::Filter<float> firstOddBandR;
+    juce::dsp::IIR::Filter<float> secondOddBandR;
+    juce::dsp::IIR::Filter<float> thirdOddBandR;
+    juce::dsp::IIR::Filter<float> fourthOddBandR;
+    juce::dsp::IIR::Filter<float> firstEvenBandR;
+    juce::dsp::IIR::Filter<float> secondEvenBandR;
+    juce::dsp::IIR::Filter<float> thirdEvenBandR;
+    juce::dsp::IIR::Filter<float> fourthEvenBandR;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Harmonicator9000AudioProcessor)
 };

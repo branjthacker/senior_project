@@ -13,9 +13,9 @@
 #define SMALL_PITCH_ARRAY_SIZE 200
 #define LARGE_PITCH_ARRAY_SIZE 2500
 #define CRITICAL_SAMPLE_SHIFT 5 //the amount of samples that are needed to trigger an actual change
-#define CRITICAL_VOLUME_THRESH 0.006 //avg input volume must be above this for any synth generation or frequency updating (basically a gate)
+#define CRITICAL_VOLUME_THRESH 0.05 //avg input volume must be above this for any synth generation or frequency updating (basically a gate)
 #define FILTER_QUALITY 10.0 //define the Q for low pass filters on synth generators (adjust to taste)
-#define PITCH_DETECTION_THRESH 0.1 //must be at least this amound smaller for a new pitch to be registered
+#define PITCH_DETECTION_THRESH 1.8 //must be at least this amount smaller for a new pitch to be registered
 #define MINIMUM_FREQ 40 //define the minimum and maximum frequencies servicable by the plugin (setup for bass, could add toggle in the future)
 #define MAX_FREQ 392
 void getUserDefinedSettings(juce::AudioProcessorValueTreeState& apvts);
@@ -94,6 +94,7 @@ private:
     bool processingAvg = false; //set high before the processingAvg function is called, set low when done
     bool coefficientsRdy = false; //say weather or not new coefficients are ready
     float lastFreqPitch = 1.0; //the previous frequency, this needs to equal current frequency for an actual pitch update to prevent glitching
+ 
     //variables that hold the last state of vol and freq, we only update filters if they actually change
     float lastFreq= 1.0;
     float lastFundVol = 0.0;

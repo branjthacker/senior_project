@@ -162,8 +162,7 @@ void Harmonicator9000AudioProcessor::getFundamentalFrequency() noexcept{
     //while we're here, this is a great time to see im the user updated any knobs
     getUserDefinedSettings(apvts);
     //perform the autocorrelation, find the first strongest peak, do math to determine frequency
-    //keep track of the most minimum index ( this will give how many samples our wave cycle is (hopefully))
-    //todo: add some more percice checking, it can easily drop up or down an octave right now.
+    
     //do not update the pitch below a certian volume
     int minIndex = 0;
     float minVal = 999999999999; //some absurdly large number
@@ -172,8 +171,10 @@ void Harmonicator9000AudioProcessor::getFundamentalFrequency() noexcept{
     std::array<float, 3> lastThree = { 0, 0, 0};
     
     while (indexOffset < LARGE_PITCH_ARRAY_SIZE - SMALL_PITCH_ARRAY_SIZE) {
+
         float accumDiff = 0;
         int i = 0;
+
         while (i < SMALL_PITCH_ARRAY_SIZE) {
             //go through each sample of the small array and subtract it from the big array at it's offset index from i
             accumDiff += abs(smallPitchArray[i] - largePitchArray[i + indexOffset]);
@@ -196,7 +197,8 @@ void Harmonicator9000AudioProcessor::getFundamentalFrequency() noexcept{
         (avgVol > CRITICAL_VOLUME_THRESH)) {
         //map this to an analog frequency based on sample rate. (sample rate / minIndex)
         float fundamentalFreqNew = sampleRate / minIndex;
-        //basically make sure we are inside the bounds for a valid pitch shift operation
+        //basically make sure we are inside the bounds for a valid pitch shift operation,
+        //do a lot of checks to try to keep the frequency detection stable from glitches
         if ((fundamentalFreqNew * 2 > fundamentalFreq + 1.5 || fundamentalFreqNew * 2 < fundamentalFreq - 1.5)
             && ((fundamentalFreqNew <= MAX_FREQ) && (fundamentalFreqNew >= MINIMUM_FREQ))){
             if ((fundamentalFreqNew <= lastFreqPitch + CRITICAL_SAMPLE_SHIFT) &&
@@ -486,7 +488,8 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         //boolean if we are ready to do the calc (and reset the pointer)
         for (int i = 0; i < buffer.getNumSamples(); ++i) {
             if (channel == 1) {
-                addToCorr(channelData[i]); //only process one channel for frequency or the buffers will get messed up
+                //process at higher gain for less float resolution error in pich calculation
+                addToCorr(channelData[i] * 8); //only process one channel for frequency or the buffers will get messed up
             }
             if (evenSynthVol > -100.0 && avgVol > CRITICAL_VOLUME_THRESH) {
                 channelData[i] += squareOutBuff[i];
@@ -494,7 +497,7 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             if (oddSynthVol > -100.0 && avgVol > CRITICAL_VOLUME_THRESH) {
                 channelData[i] += sawOutBuff[i];
             }
-            channelData[i] = channelData[i] / 2; //vol reduction to prevent peaking
+            channelData[i] = channelData[i]; //vol reduction to prevent peaking
         }
         ////process the audio through the harmonic filtering
         //std::vector<float*> harmFiltData = { channelData };
@@ -510,6 +513,7 @@ void Harmonicator9000AudioProcessor::processBlock (juce::AudioBuffer<float>& buf
         //thirdEvenBand.process(harmContext);
         ////fourthEvenBand_groupA.process(harmContext);
     }
+    //process the audio through the harmonic filtering
     juce::dsp::AudioBlock<float> harmBlock(buffer);
     auto leftBlock = harmBlock.getSingleChannelBlock(0); //left channel
     auto rightBlock = harmBlock.getSingleChannelBlock(1); //right channel

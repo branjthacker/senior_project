@@ -1,0 +1,16 @@
+Built by Brandon Thacker using JUCE framework. 
+School Email: bjthacke@calpoly.edu 
+Personal Email: branjthacker@gmail.com
+
+PluginProcessor.h contains all of the global variable and functions
+for the DSP.
+
+PluginProcessor.cpp contains all of the DSP
+
+PluginEditor files contain all of the code for the GUI.
+
+To build this, you need to have JUCE downloaded and build it in Visual Studio 2022,
+It took me a few hours to set up, so I reccomend looking at the demo video linked in
+the report, which showcases the full functionality of the build.
+If you really want to though... the first part of this video will walk you through it:
+https://www.youtube.com/watch?v=i_Iq4_Kd7Rc 

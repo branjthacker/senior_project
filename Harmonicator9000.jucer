@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="wFeb5P" name="Harmonicator9000" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="Brandon_Custom">
   <MAINGROUP id="gIaJrV" name="Harmonicator9000">
     <GROUP id="{03D3EF32-AA20-33A1-3F37-75011660E820}" name="Source">
       <FILE id="Vwmi54" name="PluginProcessor.cpp" compile="1" resource="0"

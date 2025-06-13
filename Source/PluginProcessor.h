@@ -13,7 +13,7 @@
 #define SMALL_PITCH_ARRAY_SIZE 200
 #define LARGE_PITCH_ARRAY_SIZE 2500
 #define CRITICAL_SAMPLE_SHIFT 5 //the amount of samples that are needed to trigger an actual change
-#define CRITICAL_VOLUME_THRESH 0.05 //avg input volume must be above this for any synth generation or frequency updating (basically a gate)
+#define CRITICAL_VOLUME_THRESH 0.09 //avg input volume must be above this for any synth generation or frequency updating (basically a gate)
 #define FILTER_QUALITY 10.0 //define the Q for low pass filters on synth generators (adjust to taste)
 #define PITCH_DETECTION_THRESH 1.8 //must be at least this amount smaller for a new pitch to be registered
 #define MINIMUM_FREQ 40 //define the minimum and maximum frequencies servicable by the plugin (setup for bass, could add toggle in the future)
@@ -84,7 +84,7 @@ public:
 private:
     //==============================================================================
     
-    std::array<float, LARGE_PITCH_ARRAY_SIZE> largePitchArray;
+    std::array<float, LARGE_PITCH_ARRAY_SIZE> largePitchArray; //two arrays to hold pitch, for running pitch threads twice as fast
     std::array<float, SMALL_PITCH_ARRAY_SIZE> smallPitchArray;
     std::array<float, LARGE_PITCH_ARRAY_SIZE> avgVolArray; //copy into this each time we start a new freq calc, will update avg. vol
     std::vector<float> squareOutBuff; //these will be reassigned to proper size in prepareToPlay
